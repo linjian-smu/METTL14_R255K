@@ -1,0 +1,70 @@
+#python scirpt for calculate m6A abundance of +-2k around select m6A peaks 
+import os
+from numpy import mean,median
+from multiprocessing import Pool
+bin_size=50
+m6A_summit=''
+m6A_IP,m6A_Input ='',''
+wk_dir=''
+bed_dir="%s/comm"%(wk_dir)
+if not os.path.exists(bed_dir):
+    os.mkdir(bed_dir)
+
+#get total reads number of bams
+def get_IP_Input_sum(bam):
+    num = os.popen("samtools idxstats %s|cut -f3|awk 'BEGIN {total=0} {total += $1} END {print total}'" % bam)
+    Num = float(num.read())
+    return Num
+
+#split m6A peaks into equal size bins
+def get_bin():
+    flank_size=2000
+    total_number = flank_size//bin_size
+    for number in range(-total_number,total_number):
+        with open("%s/bin_%d"%(bed_dir,number),'w') as fw:
+            with open("%s"%(m6A_summit),'r') as f:
+                for i in f.readlines():
+                    j = i.rstrip().split()
+                    if 'chr' in j[0] and len(j[0]) <= 6:
+                        summit = int(j[1])+(int(j[2])-int(j[1]))//2
+                        if summit >= 2000:
+                            fw.write("%s\t%d\t%d\n"%(j[0],summit+(bin_size*number),summit+(bin_size*(number+1))))
+
+
+#get m6A coverage
+def get_coverage(file):
+    os.system("bedtools multicov -bams %s %s -bed %s > %s.coverage"%(m6A_IP,m6A_Input,file,file))
+
+
+def get_mean_coverage(file):
+    Num_IP,Num_Input = get_IP_Input_sum(m6A_IP),get_IP_Input_sum(m6A_Input)
+    IP_line,Input_line=[],[]
+    with open("%s.coverage"%(file),'r') as f:
+        for i in f.readlines():
+            j = i.rstrip().split()
+            value_IP,value_Input = float(j[-2]),float(j[-1])
+            IP_norm,Input_norm = value_IP*10**9/(Num*bin_size),value_Input*10**9/(Num*bin_size)
+            IP_line.append(IP_norm)
+            Input_line.append(Input_norm)
+    num_IP,num_Input = mean(IP_line),mean(Input_line)
+    return num_IP,num_Input
+
+def main():
+    line = [i for i in os.listdir(bed_dir) if not i.endswith('.coverage')]
+    pool=Pool()
+    for bin in line:
+        file = "%s/%s"%(bed_dir,bin)
+        pool.apply_async(get_coverage, (file, ))
+    pool.close()
+    pool.join()
+    with open("%s/data_unsort"%(wk_dir),'w') as fw:
+        for bin in line:
+            number = bin.split('_')[-1]
+            file = "%s/%s"%(bed_dir,bin)
+            num_IP,num_Input=get_median_coverage(file)
+            fw.write("%s\t%f\t%f\n"%(number,num_IP,num_Input))
+
+if __name__=='__main__':
+    get_bin()
+    main()
+    os.system("sort -n -k 1 %s/data_unsort > %s/data_for_plot"%(wk_dir,wk_dir))
