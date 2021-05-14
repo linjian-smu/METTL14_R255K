@@ -1,0 +1,52 @@
+#python script for calculating gene expression from Down-regulating m6A genes, other m6A genes and non-m6A genes 
+import os
+from numpy import median,mean
+from scipy import stats
+
+wk_dir='/data6/xlj/Xiaona/Gene'
+Expr = '/data6/xlj/Xiaona/Gene/Expression/result.FPKM'
+
+def get_gene():
+    m6A="%s/KI_Down.gene"%(wk_dir)
+    nom6A="%s/m6A.gene"%(wk_dir)
+    return m6A,nom6A
+
+def get_exp():
+    dic={}
+    with open("%s"%(Expr),'r') as f:
+        for i in f.readlines():
+            j = i.rstrip().split()
+            gene=j[0]
+            # mean of replicate
+            value = mean([float(j[-2]),float(j[-1])])
+            if value > 0:
+                dic[gene] = value
+    return dic
+
+def get_geneline(file):
+    line=[i.rstrip('\n') for i in open("%s"%(file),'r').readlines()]
+    return line
+
+def main():
+    m6A,nom6A=get_gene()
+    gene_m6A,gene_other=get_geneline(m6A),get_geneline(nom6A)
+    dic=get_exp()
+    exp_m6A=[float(dic[i]) for i in dic if i in gene_m6A]
+    exp_other = [float(dic[j]) for j in dic if j in gene_other]
+    exp_nom6A=[float(dic[k]) for k in dic if k not in gene_m6A if k not in gene_other]
+    stat,p=stats.ranksums(exp_m6A,exp_other)
+    #print("%s\n"%(median(exp_m6A)))
+    #print("%s\n"%(median(exp_other)))
+    #print("%s\n"%(median(exp_nom6A)))
+    #print(p)
+    with open("%s/Expression/Data_for_plot"%(wk_dir),'w') as fw:
+        for gene in dic:
+            if gene in gene_m6A:
+                fw.write("KI_Down\t%s\t%s\n"%(gene,dic[gene]))
+            elif gene in gene_other:
+                fw.write("Other_m6A\t%s\t%s\n"%(gene,dic[gene]))
+            else:
+                fw.write("No_m6A\t%s\t%s\n"%(gene,dic[gene]))
+
+if __name__=='__main__':
+    main()
